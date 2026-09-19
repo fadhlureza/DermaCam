@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Derma-Cam Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-animation"></div>
+    <div class="container">
+        <header class="glass-panel">
+            <h1>Derma-Cam</h1>
+            <p>AI Burn Screening System</p>
+            <div id="connection-status" class="status-indicator">
+                <span class="dot"></span> Connected
+            </div>
+        </header>
+
+        <main>
+            <section class="camera-section glass-panel">
+                <h2>Live Feed</h2>
+                <div class="video-container">
+                    <!-- Placeholder for actual camera stream -->
+                    <div class="camera-placeholder">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                            <circle cx="12" cy="13" r="4"></circle>
+                        </svg>
+                        <p>Camera Stream Offline</p>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button id="capture-btn" class="btn primary">Scan Area</button>
+                </div>
+            </section>
+
+            <section class="analysis-section glass-panel">
+                <h2>Analysis Result</h2>
+                <div class="result-card">
+                    <div class="severity-badge" id="severity-badge">
+                        Menunggu...
+                    </div>
+                    <div class="details">
+                        <div class="detail-item">
+                            <span class="label">Status:</span>
+                            <span class="value" id="status-val">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="label">Confidence:</span>
+                            <span class="value" id="confidence-val">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="action-recommendation" id="recommendation">
+                    Silakan lakukan pemindaian luka untuk melihat hasil evaluasi.
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
