@@ -1,0 +1,15 @@
+// PLACEHOLDER UNTUK MODEL TENSORFLOW.JS
+
+/*
+CARA IMPLEMENTASI MODEL AI ANDA:
+1. Anda pasti sudah melakukan training model di Python (TensorFlow / Keras).
+2. Konversi model Anda (h5 atau saved_model) ke format tensorflow.js menggunakan 'tfjs-converter'.
+   Command contoh di terminal PC Anda:
+   tensorflowjs_converter --input_format keras model_luka_bakar.h5 ./tfjs_model
+3. Hasilnya akan ada file 'model.json' dan beberapa file 'groupX-shardXofX.bin'.
+4. Buka isi file 'model.json' Anda, lalu COPY semua teksnya dan PASTE ke file ini 
+   menggantikan tulisan placeholder ini.
+*/
+{
+  "placeholder": "Ganti isi file ini dengan teks dari model.json asli Anda"
+}

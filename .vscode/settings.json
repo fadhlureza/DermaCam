@@ -31,5 +31,7 @@
     "--background-index",
     "--query-driver=**",
     "--compile-commands-dir=c:\\Users\\User\\Documents\\UI\\semester7\\Despro\\dermacam\\dermacam\\build"
-  ]
+  ],
+  "idf.portWin": "COM22",
+  "idf.flashType": "UART"
 }
