@@ -33,5 +33,6 @@
     "--compile-commands-dir=c:\\Users\\User\\Documents\\UI\\semester7\\Despro\\dermacam\\dermacam\\build"
   ],
   "idf.portWin": "COM22",
-  "idf.flashType": "UART"
+  "idf.flashType": "UART",
+  "idf.port": "COM22"
 }

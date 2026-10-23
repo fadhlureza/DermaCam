@@ -34,14 +34,13 @@ void init_lora(void)
     gpio_config(&io_conf);
 
     // Setup UART
-    uart_config_t uart_config = {
-        .baud_rate = 9600, // EBYTE E220 default baud rate
-        .data_bits = UART_DATA_8_BITS,
-        .parity    = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT,
-    };
+    uart_config_t uart_config = {};
+    uart_config.baud_rate = 9600; // EBYTE E220 default baud rate
+    uart_config.data_bits = UART_DATA_8_BITS;
+    uart_config.parity    = UART_PARITY_DISABLE;
+    uart_config.stop_bits = UART_STOP_BITS_1;
+    uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+    uart_config.source_clk = UART_SCLK_DEFAULT;
     
     ESP_ERROR_CHECK(uart_param_config(LORA_UART_PORT, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(LORA_UART_PORT, LORA_TX, LORA_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
@@ -65,7 +64,8 @@ void lora_send_report(const char* report)
         ESP_LOGE(TAG, "LoRa AUX timeout. Module might be busy or not connected properly.");
     }
     
-    ESP_LOGI(TAG, ">>> LORA TX: Transmitting: %s", report);
+    ESP_LOGI(TAG, "[LORA] Sent: %s", report);
+    printf("[LORA] Sent: %s\n", report);
     int len = strlen(report);
     uart_write_bytes(LORA_UART_PORT, report, len);
     

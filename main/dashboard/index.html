@@ -1,63 +1,103 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Derma-Cam Dashboard</title>
+    <title>DermaCam | Diagnostic Dashboard</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <!-- Offline TensorFlow.js -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="tf.min.js"></script>
 </head>
 <body>
-    <div class="background-animation"></div>
-    <div class="container">
-        <header class="glass-panel">
-            <h1>Derma-Cam</h1>
-            <p>AI Burn Screening System</p>
-            <div id="connection-status" class="status-indicator">
-                <span class="dot"></span> Connected
+    <div class="app-container">
+        <!-- Sidebar / Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="logo"></div>
+                <h1>DermaCam</h1>
             </div>
-        </header>
+            
+            <div class="nav-section">
+                <p class="nav-label">SYSTEM STATUS</p>
+                <div class="status-item connected">
+                    <span class="indicator"></span>
+                    <span>Device Connected</span>
+                </div>
+                <div id="ai-status" class="status-item loading">
+                    <span class="indicator"></span>
+                    <span>Loading AI Engine...</span>
+                </div>
+            </div>
 
-        <main>
-            <section class="camera-section glass-panel">
-                <h2>Live View</h2>
-                <div class="video-container">
-                    <img id="camera-stream" src="/stream" crossorigin="anonymous" style="width: 100%; height: 100%; object-fit: cover;" alt="Camera Stream">
-                </div>
-                <div class="controls">
-                    <p id="model-status" style="color: var(--warning-color); font-size: 0.9rem;">Memuat Model AI...</p>
-                </div>
-            </section>
+            <div class="nav-section">
+                <p class="nav-label">CONTROLS</p>
+                <button id="toggle-light-btn" class="btn-toggle active">
+                    <span class="icon">💡</span> 
+                    <span id="btn-text">Turn Off Ring Light</span>
+                </button>
+            </div>
+        </aside>
 
-            <section class="analysis-section glass-panel">
-                <h2>Analisis Real-time</h2>
-                <div class="result-card">
-                    <div class="severity-badge" id="severity-badge">
-                        Menunggu...
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header class="top-header">
+                <h2>Burn Diagnostic Dashboard</h2>
+                <span class="date-display" id="date-display">Today</span>
+            </header>
+
+            <div class="dashboard-grid">
+                <!-- Camera Feed -->
+                <div class="card video-card">
+                    <div class="card-header">
+                        <h3>Live Camera Feed</h3>
+                        <span id="stream-badge" class="badge live">LIVE</span>
                     </div>
-                    <div class="details">
-                        <div class="detail-item">
-                            <span class="label">Status:</span>
-                            <span class="value" id="status-val">-</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="label">Confidence:</span>
-                            <span class="value" id="confidence-val">-</span>
-                        </div>
+                    <div class="video-wrapper">
+                        <img id="camera-stream" src="http://192.168.4.1:81/stream" crossorigin="anonymous" alt="Camera Feed">
+                        <!-- Crosshair overlay for professional look -->
+                        <div class="crosshair"></div>
+                    </div>
+                    <div class="video-actions">
+                        <button id="capture-btn" class="btn-capture">
+                            <span class="icon">📸</span>
+                            <span id="capture-btn-text">Capture & Diagnose</span>
+                        </button>
                     </div>
                 </div>
-                <div class="action-recommendation" id="recommendation">
-                    Arahkan kamera ke area luka untuk memulai pemindaian otomatis.
+
+                <!-- AI Analysis Results -->
+                <div class="card analysis-card">
+                    <div class="card-header">
+                        <h3>AI Analysis Report</h3>
+                    </div>
+                    
+                    <div class="severity-container">
+                        <p class="sub-label">PREDICTED SEVERITY</p>
+                        <div class="severity-badge" id="severity-badge">
+                            Awaiting Scan...
+                        </div>
+                    </div>
+
+                    <div class="metrics-grid">
+                        <div class="metric-box">
+                            <span class="metric-label">Confidence</span>
+                            <span class="metric-value" id="confidence-val">--%</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-label">Status</span>
+                            <span class="metric-value" id="status-val">Standby</span>
+                        </div>
+                    </div>
+
+                    <div class="recommendation-box" id="recommendation">
+                        Please point the camera directly at the burn area to begin autonomous scanning.
+                    </div>
                 </div>
-            </section>
+            </div>
         </main>
     </div>
     
-    <!-- Hidden canvas for image extraction -->
     <canvas id="hidden-canvas" style="display:none;"></canvas>
-    
     <script src="script.js"></script>
 </body>
 </html>

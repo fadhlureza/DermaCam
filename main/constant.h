@@ -44,4 +44,13 @@
 #define OLED_SDA          1
 #define OLED_SCL          2
 
+// LED RING PINS
+#define LED_DI            21
+#define LED_DO            47
+
+// PHYSICAL CAPTURE BUTTON PIN
+// Wire one leg to BUTTON_PIN and the other leg to GND (Internal pull-up enabled)
+// Default: GPIO 48 (or set to 0 to use onboard BOOT button)
+#define BUTTON_PIN        48
+
 #endif // CONSTANT_H

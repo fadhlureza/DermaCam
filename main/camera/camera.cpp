@@ -28,12 +28,12 @@ void init_camera(void)
     config.pin_reset = CAM_PIN_RESET;
     
     config.xclk_freq_hz = 10000000; // Lower XCLK to 10MHz to prevent severe overheating
-    config.frame_size = FRAMESIZE_UXGA; // 320x240 is perfect for AI (224x224) and reduces sensor load by 75% compared to VGA
+    config.frame_size = FRAMESIZE_XGA; 
     config.pixel_format = PIXFORMAT_JPEG; 
-    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+    config.grab_mode = CAMERA_GRAB_LATEST; // Always get the most recent frame
     config.fb_location = CAMERA_FB_IN_PSRAM;
     config.jpeg_quality = 30; // 30 forces higher compression, reducing DSP load and heat
-    config.fb_count = 1; // Single buffer to reduce continuous DMA strain
+    config.fb_count = 2; // Double buffering to ensure frames don't freeze
     
     // camera init
     esp_err_t err = esp_camera_init(&config);
