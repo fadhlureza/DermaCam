@@ -19,19 +19,15 @@ extern "C" void app_main(void)
 
     // 1. Initialize OLED Display (Hardware I2C)
     init_oled();
-    oled_show_boot_screen(false, false);
+    oled_show_boot_stage("Waiting...", "Waiting...");
 
     // 2. Initialize LoRa EBYTE E220 (UART)
     init_lora();
-    
-    // Update Boot Screen: LoRa is OK
-    oled_show_boot_screen(false, true);
+    oled_show_boot_stage("OK", "Waiting...");
 
     // 3. Initialize OV5640 Camera
-    init_camera();
-    
-    // Update Boot Screen: Camera is OK
-    oled_show_boot_screen(true, true);
+    bool cam_ok = init_camera();
+    oled_show_boot_stage("OK", cam_ok ? "OK" : "ERROR");
 
     // 4. Initialize Network (WiFi AP mode)
     init_network_ap();
@@ -49,10 +45,9 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "Derma-Cam Firmware running.");
     ESP_LOGI(TAG, "Connect to AP 'Derma-Cam' and visit http://192.168.4.1/");
     
-    // Wait 3 seconds so the user can read the Boot Screen
-    vTaskDelay(pdMS_TO_TICKS(3000));
+    // Brief delay so boot screen status is visible
+    vTaskDelay(pdMS_TO_TICKS(1500));
     
-    // 7. Transition to Main Screen
-    // Assuming battery is at 100% for now (we can implement ADC reading later)
-    oled_show_main_screen(100, "Waiting for Client...");
+    // 8. Transition to Main Screen
+    oled_show_main_screen(100, cam_ok ? "System Ready" : "Camera Error");
 }

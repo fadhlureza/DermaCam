@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DermaCam | Diagnostic Dashboard</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="tf.min.js"></script>
 </head>
 <body>
@@ -19,13 +18,16 @@
             
             <div class="nav-section">
                 <p class="nav-label">SYSTEM STATUS</p>
-                <div class="status-item connected">
+                <div id="device-status" class="status-item ready">
                     <span class="indicator"></span>
-                    <span>Device Connected</span>
+                    <span id="device-status-text">ESP32 Online</span>
                 </div>
                 <div id="ai-status" class="status-item loading">
                     <span class="indicator"></span>
-                    <span>Loading AI Engine...</span>
+                    <span id="ai-status-text">Loading AI Engine (0%)...</span>
+                </div>
+                <div id="ai-progress-container" style="margin-top: 8px; width: 100%; background: rgba(255,255,255,0.15); border-radius: 4px; height: 6px; overflow: hidden;">
+                    <div id="ai-progress-bar" style="width: 0%; height: 100%; background: #3b82f6; transition: width 0.3s ease;"></div>
                 </div>
             </div>
 
@@ -53,14 +55,14 @@
                         <span id="stream-badge" class="badge live">LIVE</span>
                     </div>
                     <div class="video-wrapper">
-                        <img id="camera-stream" src="http://192.168.4.1:81/stream" crossorigin="anonymous" alt="Camera Feed">
+                        <img id="camera-stream" src="" crossorigin="anonymous" alt="Camera Feed">
                         <!-- Crosshair overlay for professional look -->
                         <div class="crosshair"></div>
                     </div>
                     <div class="video-actions">
-                        <button id="capture-btn" class="btn-capture">
+                        <button id="capture-btn" class="btn-capture" disabled>
                             <span class="icon">📸</span>
-                            <span id="capture-btn-text">Capture & Diagnose</span>
+                            <span id="capture-btn-text">Loading AI Engine (0%)...</span>
                         </button>
                     </div>
                 </div>

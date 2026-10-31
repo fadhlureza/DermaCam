@@ -55,6 +55,8 @@ void init_network_ap(void)
     strcpy((char *)wifi_config.ap.ssid, WIFI_AP_SSID);
     wifi_config.ap.ssid_len = strlen(WIFI_AP_SSID);
     strcpy((char *)wifi_config.ap.password, WIFI_AP_PASS);
+    wifi_config.ap.channel = 1;
+    wifi_config.ap.beacon_interval = 100;
     wifi_config.ap.max_connection = MAX_STA_CONN;
     wifi_config.ap.authmode = WIFI_AUTH_WPA2_PSK;
     
@@ -66,5 +68,9 @@ void init_network_ap(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGI(TAG, "WiFi AP initialized. SSID:%s password:%s", WIFI_AP_SSID, WIFI_AP_PASS);
+    // Disable WiFi Power Saving to guarantee maximum throughput and prevent station disconnects
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+    esp_wifi_set_max_tx_power(78); // Max TX power for strong signal
+
+    ESP_LOGI(TAG, "WiFi AP initialized (Channel 1, PS_NONE, Max TX). SSID:%s password:%s", WIFI_AP_SSID, WIFI_AP_PASS);
 }

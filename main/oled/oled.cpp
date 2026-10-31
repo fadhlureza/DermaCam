@@ -48,22 +48,34 @@ static const uint8_t font5x7[][5] = {
     {0x00, 0x41, 0x36, 0x08, 0x00}, {0x08, 0x08, 0x2A, 0x1C, 0x08}, {0x08, 0x1C, 0x2A, 0x08, 0x08}
 };
 
+static bool s_oled_ok = false;
+#define OLED_I2C_TIMEOUT_MS 100
+
 static esp_err_t oled_send_cmd(uint8_t cmd) {
+    if (!s_oled_ok) return ESP_FAIL;
     uint8_t data[2] = {OLED_CMD, cmd};
-    return i2c_master_write_to_device(OLED_I2C_PORT, OLED_ADDR, data, 2, 1000 / portTICK_PERIOD_MS);
+    esp_err_t err = i2c_master_write_to_device(OLED_I2C_PORT, OLED_ADDR, data, 2, pdMS_TO_TICKS(OLED_I2C_TIMEOUT_MS));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "OLED I2C cmd failed (%s)", esp_err_to_name(err));
+    }
+    return err;
 }
 
 static esp_err_t oled_send_data(uint8_t *data, size_t len) {
-    // We need to prefix the data array with the DATA control byte (0x40)
-    // For simplicity, we allocate a small buffer on stack
+    if (!s_oled_ok) return ESP_FAIL;
     uint8_t buf[129];
     buf[0] = OLED_DATA;
     if (len > 128) len = 128;
     memcpy(&buf[1], data, len);
-    return i2c_master_write_to_device(OLED_I2C_PORT, OLED_ADDR, buf, len + 1, 1000 / portTICK_PERIOD_MS);
+    esp_err_t err = i2c_master_write_to_device(OLED_I2C_PORT, OLED_ADDR, buf, len + 1, pdMS_TO_TICKS(OLED_I2C_TIMEOUT_MS));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "OLED I2C data failed (%s)", esp_err_to_name(err));
+    }
+    return err;
 }
 
 static void oled_clear() {
+    if (!s_oled_ok) return;
     uint8_t empty[128] = {0};
     for (uint8_t i = 0; i < 8; i++) {
         oled_send_cmd(0xB0 + i); // Set page address
@@ -74,6 +86,7 @@ static void oled_clear() {
 }
 
 static void oled_print(uint8_t page, uint8_t col, const char* str) {
+    if (!s_oled_ok) return;
     oled_send_cmd(0xB0 + page);
     oled_send_cmd(col & 0x0F);
     oled_send_cmd(0x10 | (col >> 4));
@@ -100,13 +113,36 @@ void init_oled(void)
     conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
     conf.scl_io_num = OLED_SCL;
     conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
-    conf.master.clk_speed = 400000;
+    conf.master.clk_speed = 100000;
     
-    ESP_ERROR_CHECK(i2c_param_config(OLED_I2C_PORT, &conf));
-    ESP_ERROR_CHECK(i2c_driver_install(OLED_I2C_PORT, conf.mode, 0, 0, 0));
+    esp_err_t err = i2c_param_config(OLED_I2C_PORT, &conf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "I2C param config failed: %s", esp_err_to_name(err));
+        s_oled_ok = false;
+        return;
+    }
+
+    err = i2c_driver_install(OLED_I2C_PORT, conf.mode, 0, 0, 0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "I2C driver install failed: %s", esp_err_to_name(err));
+        s_oled_ok = false;
+        return;
+    }
     
+    // Test probe OLED presence with short 25ms timeout
+    uint8_t probe_cmd[2] = {OLED_CMD, 0xAE}; // Display OFF
+    err = i2c_master_write_to_device(OLED_I2C_PORT, OLED_ADDR, probe_cmd, 2, pdMS_TO_TICKS(OLED_I2C_TIMEOUT_MS));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "SSD1306 OLED not responding at 0x%02X (SDA:%d, SCL:%d): %s. System running without OLED.", 
+                 OLED_ADDR, OLED_SDA, OLED_SCL, esp_err_to_name(err));
+        s_oled_ok = false;
+        return;
+    }
+
+    s_oled_ok = true; // OLED is connected and responding!
+
     // SSD1306 Init Sequence
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(50));
     oled_send_cmd(0xAE); // Display OFF
     oled_send_cmd(0x20); // Set Memory Addressing Mode
     oled_send_cmd(0x02); // Page Addressing Mode
@@ -117,25 +153,32 @@ void init_oled(void)
     oled_send_cmd(0xAF); // Display ON
     
     oled_clear();
-    ESP_LOGI(TAG, "OLED Display Initialized.");
+    ESP_LOGI(TAG, "OLED Display Initialized successfully.");
 }
 
-void oled_show_boot_screen(bool cam_ok, bool lora_ok)
+void oled_show_boot_stage(const char* lora_status, const char* cam_status)
 {
+    if (!s_oled_ok) return;
     oled_clear();
     oled_print(1, 10, "=== DERMA-CAM ===");
     oled_print(3, 0, "System Booting...");
     
     char buf[32];
-    snprintf(buf, sizeof(buf), "Camera: %s", cam_ok ? "OK" : "ERROR");
+    snprintf(buf, sizeof(buf), "LoRa  : %s", lora_status ? lora_status : "Waiting...");
     oled_print(5, 0, buf);
-    
-    snprintf(buf, sizeof(buf), "LoRa  : %s", lora_ok ? "OK" : "ERROR");
+
+    snprintf(buf, sizeof(buf), "Camera: %s", cam_status ? cam_status : "Waiting...");
     oled_print(6, 0, buf);
+}
+
+void oled_show_boot_screen(bool cam_ok, bool lora_ok)
+{
+    oled_show_boot_stage(lora_ok ? "OK" : "ERROR", cam_ok ? "OK" : "ERROR");
 }
 
 void oled_show_main_screen(int battery_pct, const char* activity)
 {
+    if (!s_oled_ok) return;
     oled_clear();
     
     char buf[32];
@@ -152,6 +195,7 @@ void oled_show_main_screen(int battery_pct, const char* activity)
 
 void oled_update_activity(const char* activity)
 {
+    if (!s_oled_ok) return;
     // Clear page 6 first
     uint8_t empty[128] = {0};
     oled_send_cmd(0xB0 + 6); oled_send_cmd(0x00); oled_send_cmd(0x10);

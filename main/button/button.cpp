@@ -1,6 +1,7 @@
 #include "button.h"
 #include "constant.h"
 #include "oled.h"
+#include "webserver.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -11,20 +12,24 @@ static volatile bool s_button_trigger = false;
 
 static void button_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Physical button monitoring task started on GPIO %d", BUTTON_PIN);
+    ESP_LOGI(TAG, "Physical button monitoring task started on GPIO %d and GPIO 0 (BOOT button)", BUTTON_PIN);
 
     while (1) {
-        // Active-low: 0 means button is pressed to GND
-        if (gpio_get_level((gpio_num_t)BUTTON_PIN) == 0) {
+        // Active-low: 0 means button is pressed to GND (either external pin or onboard BOOT button)
+        bool pressed = (gpio_get_level((gpio_num_t)BUTTON_PIN) == 0) || (gpio_get_level(GPIO_NUM_0) == 0);
+        if (pressed) {
             // Debounce delay
             vTaskDelay(pdMS_TO_TICKS(50));
-            if (gpio_get_level((gpio_num_t)BUTTON_PIN) == 0) {
+            pressed = (gpio_get_level((gpio_num_t)BUTTON_PIN) == 0) || (gpio_get_level(GPIO_NUM_0) == 0);
+            if (pressed) {
                 s_button_trigger = true;
-                ESP_LOGI(TAG, ">>> Physical Capture Button Pressed! Triggering AI scan...");
+                ESP_LOGI(TAG, ">>> Physical Capture Button Pressed! Registered for HTTP polling.");
+
+                // Non-blocking OLED status update
                 oled_update_activity("Capture Pressed!");
 
                 // Wait until button is released to prevent repeated triggers
-                while (gpio_get_level((gpio_num_t)BUTTON_PIN) == 0) {
+                while ((gpio_get_level((gpio_num_t)BUTTON_PIN) == 0) || (gpio_get_level(GPIO_NUM_0) == 0)) {
                     vTaskDelay(pdMS_TO_TICKS(20));
                 }
                 // Release debounce delay
@@ -40,7 +45,7 @@ void init_button(void)
     gpio_config_t io_conf = {};
     io_conf.intr_type = GPIO_INTR_DISABLE;
     io_conf.mode = GPIO_MODE_INPUT;
-    io_conf.pin_bit_mask = (1ULL << BUTTON_PIN);
+    io_conf.pin_bit_mask = (1ULL << BUTTON_PIN) | (1ULL << GPIO_NUM_0);
     io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     
@@ -48,7 +53,7 @@ void init_button(void)
 
     // Create FreeRTOS task with 2KB stack
     xTaskCreate(button_task, "button_task", 2048, NULL, 5, NULL);
-    ESP_LOGI(TAG, "Physical button initialized on GPIO %d (Internal Pull-Up enabled).", BUTTON_PIN);
+    ESP_LOGI(TAG, "Buttons initialized on GPIO %d and GPIO 0 (BOOT button) with Pull-Up.", BUTTON_PIN);
 }
 
 bool button_get_trigger(void)

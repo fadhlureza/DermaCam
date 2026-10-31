@@ -5,12 +5,27 @@
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_timer.h"
 #include <string.h>
 
 static const char *TAG = "lora";
 
 #define LORA_UART_PORT UART_NUM_1
 #define BUF_SIZE (1024)
+
+// 20-second cooldown to guarantee < 1% duty cycle compliance
+#define LORA_DUTY_CYCLE_COOLDOWN_US (20ULL * 1000000ULL)
+static int64_t s_last_tx_time = -LORA_DUTY_CYCLE_COOLDOWN_US;
+
+int lora_get_cooldown_remaining_sec(void)
+{
+    int64_t now = esp_timer_get_time();
+    int64_t elapsed = now - s_last_tx_time;
+    if (elapsed >= LORA_DUTY_CYCLE_COOLDOWN_US) {
+        return 0;
+    }
+    return (int)((LORA_DUTY_CYCLE_COOLDOWN_US - elapsed + 999999ULL) / 1000000ULL);
+}
 
 void init_lora(void)
 {
@@ -49,9 +64,17 @@ void init_lora(void)
     ESP_LOGI(TAG, "LoRa E220 UART initialized on UART1.");
 }
 
-void lora_send_report(const char* report)
+bool lora_send_report(const char* report)
 {
-    if (report == NULL) return;
+    if (report == NULL) return false;
+    
+    // Check 20-second duty cycle cooldown
+    int remaining = lora_get_cooldown_remaining_sec();
+    if (remaining > 0) {
+        ESP_LOGW(TAG, "[LORA] 1%% Duty Cycle Cooldown active! Must wait %d s before next transmission.", remaining);
+        printf("[LORA] Transmission blocked: 1%% duty cycle cooldown (%ds remaining)\n", remaining);
+        return false;
+    }
     
     // Wait for AUX to be HIGH (module is idle and ready to receive/transmit)
     int timeout = 1000;
@@ -71,4 +94,8 @@ void lora_send_report(const char* report)
     
     // Add newline for easier parsing on receiver end
     uart_write_bytes(LORA_UART_PORT, "\r\n", 2);
+    
+    // Record successful transmission timestamp
+    s_last_tx_time = esp_timer_get_time();
+    return true;
 }

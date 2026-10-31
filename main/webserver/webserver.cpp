@@ -3,6 +3,7 @@
 #include <esp_http_server.h>
 #include <esp_log.h>
 #include <sys/param.h>
+#include "esp_spiffs.h"
 #include "esp_camera.h"
 #include "esp_timer.h"
 #include "cJSON.h"
@@ -12,6 +13,7 @@
 #include "button.h"
 
 static const char *TAG = "webserver";
+static httpd_handle_t s_server = NULL;
 
 // Embedded files symbols
 extern "C" {
@@ -21,16 +23,10 @@ extern "C" {
     extern const uint8_t style_css_end[]   asm("_binary_style_css_end");
     extern const uint8_t script_js_start[] asm("_binary_script_js_start");
     extern const uint8_t script_js_end[]   asm("_binary_script_js_end");
-    extern const uint8_t tf_min_js_start[] asm("_binary_tf_min_js_start");
-    extern const uint8_t tf_min_js_end[]   asm("_binary_tf_min_js_end");
-    extern const uint8_t model_json_start[] asm("_binary_model_json_start");
-    extern const uint8_t model_json_end[]   asm("_binary_model_json_end");
-    extern const uint8_t shard1_bin_start[] asm("_binary_group1_shard1of3_bin_start");
-    extern const uint8_t shard1_bin_end[]   asm("_binary_group1_shard1of3_bin_end");
-    extern const uint8_t shard2_bin_start[] asm("_binary_group1_shard2of3_bin_start");
-    extern const uint8_t shard2_bin_end[]   asm("_binary_group1_shard2of3_bin_end");
-    extern const uint8_t shard3_bin_start[] asm("_binary_group1_shard3of3_bin_start");
-    extern const uint8_t shard3_bin_end[]   asm("_binary_group1_shard3of3_bin_end");
+    extern const uint8_t tf_min_js_gz_start[] asm("_binary_tf_min_js_gz_start");
+    extern const uint8_t tf_min_js_gz_end[]   asm("_binary_tf_min_js_gz_end");
+    extern const uint8_t model_json_gz_start[] asm("_binary_model_json_gz_start");
+    extern const uint8_t model_json_gz_end[]   asm("_binary_model_json_gz_end");
 }
 
 
@@ -39,51 +35,94 @@ extern "C" {
 static esp_err_t index_html_handler(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, (const char *)index_html_start, index_html_end - index_html_start);
+    size_t len = index_html_end - index_html_start;
+    while (len > 0 && index_html_start[len - 1] == '\0') len--;
+    return httpd_resp_send(req, (const char *)index_html_start, len);
 }
 
 // Handler for "/style.css"
 static esp_err_t style_css_handler(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     httpd_resp_set_type(req, "text/css");
-    return httpd_resp_send(req, (const char *)style_css_start, style_css_end - style_css_start);
+    size_t len = style_css_end - style_css_start;
+    while (len > 0 && style_css_start[len - 1] == '\0') len--;
+    return httpd_resp_send(req, (const char *)style_css_start, len);
 }
 
 // Handler for "/script.js"
 static esp_err_t script_js_handler(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     httpd_resp_set_type(req, "application/javascript");
-    return httpd_resp_send(req, (const char *)script_js_start, script_js_end - script_js_start);
+    size_t len = script_js_end - script_js_start;
+    while (len > 0 && script_js_start[len - 1] == '\0') len--;
+    return httpd_resp_send(req, (const char *)script_js_start, len);
 }
 
-// Handler for "/tf.min.js"
+// Handler for "/tf.min.js" (Served Gzipped: 366 KB instead of 1.47 MB)
 static esp_err_t tf_min_js_handler(httpd_req_t *req) {
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=604800, immutable");
     httpd_resp_set_type(req, "application/javascript");
-    return httpd_resp_send(req, (const char *)tf_min_js_start, tf_min_js_end - tf_min_js_start);
+    return httpd_resp_send(req, (const char *)tf_min_js_gz_start, tf_min_js_gz_end - tf_min_js_gz_start);
 }
 
-// Handler for "/model.json"
+// Handler for "/model.json" (Served Gzipped: 5.2 KB instead of 123 KB)
 static esp_err_t model_json_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "HTTP: Serving /model.json (Gzip compressed)");
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=604800, immutable");
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, (const char *)model_json_start, model_json_end - model_json_start);
+    return httpd_resp_send(req, (const char *)model_json_gz_start, model_json_gz_end - model_json_gz_start);
 }
 
-// Handler for "/group1-shard1of3.bin"
-static esp_err_t shard1_bin_handler(httpd_req_t *req) {
-    httpd_resp_set_type(req, "application/octet-stream");
-    return httpd_resp_send(req, (const char *)shard1_bin_start, shard1_bin_end - shard1_bin_start);
-}
+// Handler for streaming model shards from SPIFFS partition in 8KB chunks
+static esp_err_t shard_file_handler(httpd_req_t *req) {
+    char filepath[HTTPD_MAX_URI_LEN + 32];
+    snprintf(filepath, sizeof(filepath), "/storage%s", req->uri);
 
-// Handler for "/group1-shard2of3.bin"
-static esp_err_t shard2_bin_handler(httpd_req_t *req) {
-    httpd_resp_set_type(req, "application/octet-stream");
-    return httpd_resp_send(req, (const char *)shard2_bin_start, shard2_bin_end - shard2_bin_start);
-}
+    FILE *f = fopen(filepath, "rb");
+    if (!f) {
+        ESP_LOGE(TAG, "Failed to open shard: %s (SPIFFS storage partition empty or not flashed)", filepath);
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
 
-// Handler for "/group1-shard3of3.bin"
-static esp_err_t shard3_bin_handler(httpd_req_t *req) {
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    ESP_LOGI(TAG, "HTTP: Streaming shard %s (%ld bytes)", filepath, fsize);
+
+    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=604800, immutable");
     httpd_resp_set_type(req, "application/octet-stream");
-    return httpd_resp_send(req, (const char *)shard3_bin_start, shard3_bin_end - shard3_bin_start);
+
+    const size_t chunk_size = 8192;
+    char *chunk = (char *)malloc(chunk_size);
+    if (!chunk) {
+        fclose(f);
+        httpd_resp_send_500(req);
+        return ESP_ERR_NO_MEM;
+    }
+
+    size_t bytes_read;
+    esp_err_t res = ESP_OK;
+    size_t total_sent = 0;
+    while ((bytes_read = fread(chunk, 1, chunk_size, f)) > 0) {
+        res = httpd_resp_send_chunk(req, chunk, bytes_read);
+        if (res != ESP_OK) {
+            ESP_LOGW(TAG, "Client aborted shard %s at %d/%ld bytes", filepath, (int)total_sent, fsize);
+            break;
+        }
+        total_sent += bytes_read;
+    }
+    free(chunk);
+    fclose(f);
+
+    if (res == ESP_OK) {
+        httpd_resp_send_chunk(req, NULL, 0); // Terminate chunked transmission
+        ESP_LOGI(TAG, "HTTP: Finished streaming %s (%d bytes)", filepath, (int)total_sent);
+    }
+    return res;
 }
 
 // Handler for POST "/api/report"
@@ -122,11 +161,19 @@ static esp_err_t api_report_handler(httpd_req_t *req) {
     }
     
     // 2. Send via LoRa
-    lora_send_report(buf);
+    bool sent = lora_send_report(buf);
     
     // Respond back to client
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, "{\"status\":\"ok\"}", HTTPD_RESP_USE_STRLEN);
+    if (sent) {
+        return httpd_resp_send(req, "{\"status\":\"ok\"}", HTTPD_RESP_USE_STRLEN);
+    } else {
+        int rem = lora_get_cooldown_remaining_sec();
+        char resp_buf[64];
+        snprintf(resp_buf, sizeof(resp_buf), "{\"status\":\"cooldown\",\"remaining\":%d}", rem);
+        oled_update_activity("LoRa Cooldown");
+        return httpd_resp_send(req, resp_buf, HTTPD_RESP_USE_STRLEN);
+    }
 }
 
 // Handler for POST "/api/light"
@@ -148,13 +195,13 @@ static esp_err_t api_light_handler(httpd_req_t *req) {
         cJSON *state = cJSON_GetObjectItem(root, "state");
         if (state && state->valuestring) {
             if (strcmp(state->valuestring, "on") == 0) {
-                oled_update_activity("LED On");
-                light_on_white(30); // Reduce brightness to prevent brownouts
+                light_on_white(30); // Instant hardware toggle
                 ESP_LOGI(TAG, "Successfully turned LED ON");
+                oled_update_activity("LED On");
             } else {
-                oled_update_activity("LED Off");
-                light_off();
+                light_off(); // Instant hardware toggle
                 ESP_LOGI(TAG, "Successfully turned LED OFF");
+                oled_update_activity("LED Off");
             }
         } else {
             ESP_LOGE(TAG, "JSON missing 'state' string");
@@ -164,13 +211,13 @@ static esp_err_t api_light_handler(httpd_req_t *req) {
         ESP_LOGE(TAG, "Failed to parse JSON. Checking raw string...");
         // Fallback: manually check string if cJSON fails
         if (strstr(buf, "\"on\"")) {
-            oled_update_activity("LED On");
             light_on_white(30);
             ESP_LOGI(TAG, "Fallback: turned LED ON");
+            oled_update_activity("LED On");
         } else if (strstr(buf, "\"off\"")) {
-            oled_update_activity("LED Off");
             light_off();
             ESP_LOGI(TAG, "Fallback: turned LED OFF");
+            oled_update_activity("LED Off");
         }
     }
     
@@ -241,52 +288,105 @@ static esp_err_t stream_handler(httpd_req_t *req) {
             break;
         }
         
-        // Add a 50ms delay to cap framerate at ~20 FPS and prevent WiFi bandwidth saturation
-        vTaskDelay(pdMS_TO_TICKS(50));
+        // Add a 90ms delay to cap framerate at ~11 FPS, lowering Wi-Fi bandwidth and CPU heat
+        vTaskDelay(pdMS_TO_TICKS(90));
     }
     return res;
 }
 
+// Handler for dummy/no-content requests (e.g. /favicon.ico, /tf.min.js.map)
+static esp_err_t no_content_handler(httpd_req_t *req) {
+    httpd_resp_set_status(req, "204 No Content");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+
+
+// Initialize SPIFFS partition for serving large AI model shards
+static void init_spiffs(void) {
+    esp_vfs_spiffs_conf_t conf = {
+        .base_path = "/storage",
+        .partition_label = "storage",
+        .max_files = 4,
+        .format_if_mount_failed = false
+    };
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(TAG, "Failed to mount or format SPIFFS");
+        } else if (ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGE(TAG, "Failed to find SPIFFS partition 'storage'");
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        }
+        return;
+    }
+    size_t total = 0, used = 0;
+    ret = esp_spiffs_info("storage", &total, &used);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "SPIFFS Storage: total: %d KB, used: %d KB", (int)(total / 1024), (int)(used / 1024));
+    }
+}
+
 void init_webserver(void)
 {
+    // Mount SPIFFS storage partition for model shards
+    init_spiffs();
+
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = HTTP_PORT;
-    config.max_uri_handlers = 14; // Increase limit for many handlers
+    config.max_open_sockets = 4; // Safely limited to avoid lwIP ENFILE (23) socket exhaustion
+    config.max_uri_handlers = 18; // Expanded for WebSocket handler
+    config.backlog_conn = 4;
+    config.lru_purge_enable = true; // Auto-purge old sockets to speed up concurrent file requests
+    config.stack_size = 8192;
+    config.send_wait_timeout = 30; // 30s timeout for large 4.19MB shard downloads
+    config.recv_wait_timeout = 10;
 
-    ESP_LOGI(TAG, "Starting HTTP Server on port: '%d'", config.server_port);
+    ESP_LOGI(TAG, "Starting HTTP Server on port: '%d' (max sockets: %d)", config.server_port, config.max_open_sockets);
 
     if (httpd_start(&server, &config) == ESP_OK) {
+        s_server = server; // Save global handle for WebSocket broadcasting
+
         httpd_uri_t uris[] = {
             {"/", HTTP_GET, index_html_handler, NULL},
             {"/style.css", HTTP_GET, style_css_handler, NULL},
             {"/script.js", HTTP_GET, script_js_handler, NULL},
             {"/tf.min.js", HTTP_GET, tf_min_js_handler, NULL},
             {"/model.json", HTTP_GET, model_json_handler, NULL},
-            {"/group1-shard1of3.bin", HTTP_GET, shard1_bin_handler, NULL},
-            {"/group1-shard2of3.bin", HTTP_GET, shard2_bin_handler, NULL},
-            {"/group1-shard3of3.bin", HTTP_GET, shard3_bin_handler, NULL},
+            {"/group1-shard1of3.bin", HTTP_GET, shard_file_handler, NULL},
+            {"/group1-shard2of3.bin", HTTP_GET, shard_file_handler, NULL},
+            {"/group1-shard3of3.bin", HTTP_GET, shard_file_handler, NULL},
             {"/api/report", HTTP_POST, api_report_handler, NULL},
             {"/api/light", HTTP_POST, api_light_handler, NULL},
-            {"/api/trigger", HTTP_GET, api_trigger_handler, NULL}
+            {"/api/trigger", HTTP_GET, api_trigger_handler, NULL},
+            {"/favicon.ico", HTTP_GET, no_content_handler, NULL},
+            {"/tf.min.js.map", HTTP_GET, no_content_handler, NULL}
         };
 
-        for (int i = 0; i < 11; i++) {
+        for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
             httpd_register_uri_handler(server, &uris[i]);
         }
         
-        ESP_LOGI(TAG, "Main webserver initialized successfully");
+        ESP_LOGI(TAG, "Main webserver initialized successfully (%d routes registered)", (int)(sizeof(uris) / sizeof(uris[0])));
     } else {
         ESP_LOGE(TAG, "Failed to start main webserver!");
     }
+
 
     // Start a separate webserver for the stream on port 81 to prevent blocking port 80
     httpd_handle_t stream_server = NULL;
     httpd_config_t stream_config = HTTPD_DEFAULT_CONFIG();
     stream_config.server_port = 81;
     stream_config.ctrl_port = 32769; // MUST be different from main server
+    stream_config.max_open_sockets = 2; // Stream only requires 1-2 clients
+    stream_config.max_uri_handlers = 4;
+    stream_config.backlog_conn = 2;
+    stream_config.lru_purge_enable = true;
 
-    ESP_LOGI(TAG, "Starting Stream Server on port: '%d'", stream_config.server_port);
+    ESP_LOGI(TAG, "Starting Stream Server on port: '%d' (max sockets: %d)", stream_config.server_port, stream_config.max_open_sockets);
 
     if (httpd_start(&stream_server, &stream_config) == ESP_OK) {
         httpd_uri_t stream_uri = {
@@ -301,3 +401,4 @@ void init_webserver(void)
         ESP_LOGE(TAG, "Failed to start stream webserver");
     }
 }
+

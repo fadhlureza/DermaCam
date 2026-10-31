@@ -5,9 +5,9 @@
 
 static const char *TAG = "camera";
 
-void init_camera(void)
+bool init_camera(void)
 {
-    camera_config_t config;
+    camera_config_t config = {};
     config.ledc_channel = LEDC_CHANNEL_0;
     config.ledc_timer = LEDC_TIMER_0;
     config.pin_d0 = CAM_PIN_D0;
@@ -27,8 +27,8 @@ void init_camera(void)
     config.pin_pwdn = CAM_PIN_PWDN;
     config.pin_reset = CAM_PIN_RESET;
     
-    config.xclk_freq_hz = 10000000; // Lower XCLK to 10MHz to prevent severe overheating
-    config.frame_size = FRAMESIZE_XGA; 
+    config.xclk_freq_hz = 20000000; // 20MHz standard reference clock for stable OV5640 PLL locking
+    config.frame_size = FRAMESIZE_VGA;     
     config.pixel_format = PIXFORMAT_JPEG; 
     config.grab_mode = CAMERA_GRAB_LATEST; // Always get the most recent frame
     config.fb_location = CAMERA_FB_IN_PSRAM;
@@ -38,13 +38,12 @@ void init_camera(void)
     // camera init
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Camera init failed with error 0x%x", err);
-        return;
+        ESP_LOGE(TAG, "Camera init failed with error 0x%x (%s)", err, esp_err_to_name(err));
+        return false;
     }
     
     sensor_t * s = esp_camera_sensor_get();
-    // initial sensors are flipped vertically and colors are a bit saturated
-    if (s->id.PID == OV5640_PID) {
+    if (s && s->id.PID == OV5640_PID) {
         ESP_LOGI(TAG, "OV5640 Camera detected.");
         s->set_vflip(s, 1); // flip it back
         s->set_brightness(s, 1); // up the brightness just a bit
@@ -52,4 +51,5 @@ void init_camera(void)
     }
     
     ESP_LOGI(TAG, "Camera initialized successfully.");
+    return true;
 }

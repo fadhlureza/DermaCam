@@ -41,8 +41,8 @@
 #define LORA_AUX          41
 
 // OLED I2C PINS (Moved to 1 and 2 to avoid conflict with Camera SIOD/SIOC)
-#define OLED_SDA          1
-#define OLED_SCL          2
+#define OLED_SDA          3
+#define OLED_SCL          14
 
 // LED RING PINS
 #define LED_DI            21

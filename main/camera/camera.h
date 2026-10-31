@@ -5,10 +5,13 @@
 extern "C" {
 #endif
 
+#include <stdbool.h>
+
 /**
  * @brief Initialize the OV5640 Camera
+ * @return true if initialization succeeded, false otherwise
  */
-void init_camera(void);
+bool init_camera(void);
 
 #ifdef __cplusplus
 }

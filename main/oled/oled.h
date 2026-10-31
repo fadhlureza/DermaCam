@@ -18,6 +18,11 @@ void init_oled(void);
 void oled_show_boot_screen(bool cam_ok, bool lora_ok);
 
 /**
+ * @brief Show progressive boot stages with custom text for each module
+ */
+void oled_show_boot_stage(const char* lora_status, const char* cam_status);
+
+/**
  * @brief Show the main operational screen
  * @param battery_pct 0-100 percentage
  * @param activity Real-time activity string (e.g. "Menunggu Pasien")

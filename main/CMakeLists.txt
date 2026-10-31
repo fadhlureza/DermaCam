@@ -14,12 +14,14 @@ idf_component_register(SRCS "main.cpp"
                                  "lora"
                                  "light"
                                  "button"
-                    EMBED_TXTFILES "dashboard/index.html"
+                    EMBED_FILES    "dashboard/index.html"
                                    "dashboard/style.css"
                                    "dashboard/script.js"
-                                   "dashboard/model.json"
-                                   "dashboard/tf.min.js"
-                    EMBED_FILES    "dashboard/group1-shard1of3.bin"
-                                   "dashboard/group1-shard2of3.bin"
-                                   "dashboard/group1-shard3of3.bin"
-                    REQUIRES esp_http_server nvs_flash esp_timer esp_wifi esp_netif driver json led_strip)
+                                   "dashboard/model.json.gz"
+                                   "dashboard/tf.min.js.gz"
+                    REQUIRES esp_http_server nvs_flash esp_timer esp_wifi esp_netif driver json led_strip spiffs)
+
+# Automatically build SPIFFS 'storage' partition image from model_shards.
+# Flashing is decoupled: routine 'idf.py flash' only flashes C++ code (~3 seconds).
+# To reflash model shards in the future, run 'idf.py storage-flash'.
+spiffs_create_partition_image(storage model_shards)
