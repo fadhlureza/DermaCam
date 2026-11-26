@@ -4,6 +4,12 @@
 #include "esp_log.h"
 
 static const char *TAG = "camera";
+static volatile bool s_camera_initialized = false;
+
+bool camera_is_initialized(void)
+{
+    return s_camera_initialized;
+}
 
 bool init_camera(void)
 {
@@ -50,6 +56,7 @@ bool init_camera(void)
         s->set_saturation(s, -2); // lower the saturation
     }
     
+    s_camera_initialized = true;
     ESP_LOGI(TAG, "Camera initialized successfully.");
     return true;
 }

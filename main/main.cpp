@@ -27,6 +27,7 @@ extern "C" void app_main(void)
 
     // 3. Initialize OV5640 Camera
     bool cam_ok = init_camera();
+    vTaskDelay(pdMS_TO_TICKS(50)); // Allow 3.3V rail & clocks to settle after OV5640 PLL startup
     oled_show_boot_stage("OK", cam_ok ? "OK" : "ERROR");
 
     // 4. Initialize Network (WiFi AP mode)

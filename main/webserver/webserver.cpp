@@ -160,18 +160,26 @@ static esp_err_t api_report_handler(httpd_req_t *req) {
         oled_update_activity("Sending Report...");
     }
     
-    // 2. Send via LoRa
-    bool sent = lora_send_report(buf);
+    // 2. Send or enqueue via LoRa (zero data loss during cooldown)
+    int q_pos = 0;
+    int wait_sec = 0;
+    lora_send_status_t tx_status = lora_enqueue_report(buf, &q_pos, &wait_sec);
     
     // Respond back to client
     httpd_resp_set_type(req, "application/json");
-    if (sent) {
+    if (tx_status == LORA_SEND_IMMEDIATE) {
         return httpd_resp_send(req, "{\"status\":\"ok\"}", HTTPD_RESP_USE_STRLEN);
+    } else if (tx_status == LORA_SEND_QUEUED) {
+        char resp_buf[96];
+        snprintf(resp_buf, sizeof(resp_buf), "{\"status\":\"queued\",\"position\":%d,\"remaining\":%d}", q_pos, wait_sec);
+        char oled_buf[32];
+        snprintf(oled_buf, sizeof(oled_buf), "LoRa Queued #%d", q_pos);
+        oled_update_activity(oled_buf);
+        return httpd_resp_send(req, resp_buf, HTTPD_RESP_USE_STRLEN);
     } else {
-        int rem = lora_get_cooldown_remaining_sec();
         char resp_buf[64];
-        snprintf(resp_buf, sizeof(resp_buf), "{\"status\":\"cooldown\",\"remaining\":%d}", rem);
-        oled_update_activity("LoRa Cooldown");
+        snprintf(resp_buf, sizeof(resp_buf), "{\"status\":\"cooldown\",\"remaining\":%d}", wait_sec);
+        oled_update_activity("LoRa Queue Full");
         return httpd_resp_send(req, resp_buf, HTTPD_RESP_USE_STRLEN);
     }
 }
@@ -228,9 +236,11 @@ static esp_err_t api_light_handler(httpd_req_t *req) {
 // Handler for GET "/api/trigger"
 static esp_err_t api_trigger_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     if (button_get_trigger()) {
         button_clear_trigger();
+        ESP_LOGI(TAG, "HTTP: Delivered physical button trigger to dashboard client");
         return httpd_resp_send(req, "{\"trigger\":true}", HTTPD_RESP_USE_STRLEN);
     }
     return httpd_resp_send(req, "{\"trigger\":false}", HTTPD_RESP_USE_STRLEN);
@@ -337,7 +347,7 @@ void init_webserver(void)
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = HTTP_PORT;
-    config.max_open_sockets = 4; // Safely limited to avoid lwIP ENFILE (23) socket exhaustion
+    config.max_open_sockets = 7; // Increased from 4 (within LWIP_MAX_SOCKETS=16) to avoid dropping polling requests
     config.max_uri_handlers = 18; // Expanded for WebSocket handler
     config.backlog_conn = 4;
     config.lru_purge_enable = true; // Auto-purge old sockets to speed up concurrent file requests

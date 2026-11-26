@@ -26,6 +26,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let lightOn = true; // Firmware defaults LED to ON
     let isFrozen = false;
     let isProcessing = false;
+    let isPollingTrigger = false;
+    let pendingTrigger = false;
 
     // --- TOGGLE LIGHT ---
     toggleLightBtn.addEventListener('click', async () => {
@@ -119,6 +121,12 @@ document.addEventListener('DOMContentLoaded', () => {
             captureBtn.disabled = false;
             captureBtnText.textContent = "Capture & Diagnose";
             console.log("TensorFlow.js model loaded successfully and ready.");
+
+            // If physical button was pressed while model was loading, execute once stream has loaded a frame
+            if (pendingTrigger) {
+                pendingTrigger = false;
+                setTimeout(() => triggerCapture(), 600);
+            }
         } catch (error) {
             console.error("Failed to load model:", error);
             aiStatus.className = 'status-item error';
@@ -130,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Start video stream after model check/download completes to prevent Wi-Fi bandwidth contention
             if (!streamImg.getAttribute('src')) {
                 const streamHost = window.location.hostname || '192.168.4.1';
-                streamImg.src = `http://${streamHost}:81/stream`;
+                streamImg.src = `http://${streamHost}:81/stream?t=${Date.now()}`;
             }
         }
     }
@@ -151,7 +159,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // If currently showing a frozen capture, clicking Retake restores live stream
         if (isFrozen) {
             isFrozen = false;
-            streamImg.src = "http://192.168.4.1:81/stream";
+            const streamHost = window.location.hostname || '192.168.4.1';
+            streamImg.src = `http://${streamHost}:81/stream?t=${Date.now()}`;
             streamBadge.className = "badge live";
             streamBadge.textContent = "LIVE";
             captureBtn.classList.remove('btn-retake');
@@ -250,11 +259,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     captureBtn.addEventListener('click', triggerCapture);
 
-    // --- FAST HTTP POLLING TRIGGER CHANNEL (300ms) ---
-    // Stateless, 100% reliable, zero persistent socket overhead, and immune to socket purges
+    // --- FAST HTTP POLLING TRIGGER CHANNEL (250ms with in-flight guard) ---
+    // Stateless, non-overlapping, cache-busted polling
     setInterval(async () => {
+        if (isPollingTrigger) return;
+        isPollingTrigger = true;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1500);
+
         try {
-            const res = await fetch('/api/trigger');
+            const res = await fetch(`/api/trigger?t=${Date.now()}`, {
+                cache: 'no-store',
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
             if (res.ok) {
                 if (deviceStatus) deviceStatus.className = 'status-item ready';
                 if (deviceStatusText) deviceStatusText.textContent = 'ESP32 Online';
@@ -268,8 +288,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else if (isProcessing) {
                         console.log("[Trigger] AI is currently processing an image. Ignored.");
                     } else if (!model) {
-                        console.warn("[Trigger] Button pressed but AI model is still loading.");
-                        statusVal.textContent = "Button Pressed! Model loading...";
+                        console.warn("[Trigger] Button pressed while AI model is loading. Queued for capture.");
+                        pendingTrigger = true;
+                        statusVal.textContent = "Button Pressed! Queued after model load...";
                     } else {
                         triggerCapture();
                     }
@@ -279,11 +300,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (deviceStatusText) deviceStatusText.textContent = 'ESP32 Offline';
             }
         } catch (e) {
+            clearTimeout(timeoutId);
             // Temporary fetch error during Wi-Fi reconnect or network switch
             if (deviceStatus) deviceStatus.className = 'status-item error';
             if (deviceStatusText) deviceStatusText.textContent = 'ESP32 Offline (Retrying...)';
+        } finally {
+            isPollingTrigger = false;
         }
-    }, 300);
+    }, 250);
 
     async function sendReport(severity, confidence) {
         try {
@@ -295,11 +319,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (res.ok) {
                 const data = await res.json();
-                if (data.status === "cooldown") {
-                    console.warn(`[LORA] Cooldown active. Remaining: ${data.remaining}s`);
-                    statusVal.textContent = `Report Saved (LoRa Wait ${data.remaining}s)`;
+                if (data.status === "queued") {
+                    console.log(`[LORA] Cooldown active. Report queued at #${data.position} (auto-TX in ~${data.remaining}s)`);
+                    statusVal.textContent = `LoRa Queued #${data.position} (~${data.remaining}s)`;
+                } else if (data.status === "cooldown") {
+                    console.warn(`[LORA] Queue full. Remaining: ${data.remaining}s`);
+                    statusVal.textContent = `LoRa Queue Full (${data.remaining}s)`;
                 } else {
-                    console.log("Report sent successfully to ESP32 & LoRa TX");
+                    console.log("Report sent immediately to ESP32 & LoRa TX");
                     statusVal.textContent = "Report Sent (LoRa OK)";
                 }
             }

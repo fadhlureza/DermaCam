@@ -13,6 +13,12 @@ extern "C" {
  */
 bool init_camera(void);
 
+/**
+ * @brief Check whether the camera has been initialized and XCLK is active
+ * @return true if camera is initialized, false otherwise
+ */
+bool camera_is_initialized(void);
+
 #ifdef __cplusplus
 }
 #endif
