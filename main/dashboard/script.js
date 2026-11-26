@@ -58,17 +58,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (aiStatusText) aiStatusText.textContent = "Checking Cache...";
         if (aiProgressBar) aiProgressBar.style.width = "0%";
 
-        const MODEL_CACHE_KEY = 'indexeddb://dermacam-burn-model';
+        const MODEL_CACHE_KEY = 'indexeddb://dermacam-burn-model-v2';
 
         try {
+            // Remove legacy 3-class model cache if present
+            try {
+                await tf.io.removeModel('indexeddb://dermacam-burn-model');
+            } catch (_) {}
+
             // 1. Try loading directly from client's IndexedDB storage (instant, zero Wi-Fi traffic)
             try {
                 console.log("Checking client IndexedDB for cached model...");
                 model = await tf.loadLayersModel(MODEL_CACHE_KEY);
+                const outShape = model.outputs && model.outputs[0] ? model.outputs[0].shape : null;
+                if (!outShape || outShape[outShape.length - 1] !== 4) {
+                    throw new Error(`Cached model output shape mismatch: ${JSON.stringify(outShape)}`);
+                }
                 console.log("Model successfully loaded from IndexedDB cache!");
                 if (aiProgressBar) aiProgressBar.style.width = "100%";
             } catch (cacheErr) {
-                console.log("Model not found in IndexedDB. Downloading from ESP32 /model.json...", cacheErr);
+                console.log("Model not found or outdated in IndexedDB. Downloading from ESP32 /model.json...", cacheErr);
 
                 // Verify that shard binary files exist in ESP32 SPIFFS partition
                 try {
@@ -159,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
         severityBadge.textContent = "Diagnosing...";
         severityBadge.style.background = '#e2e8f0';
         severityBadge.style.color = '#475569';
-        recommendation.textContent = "Neural network is evaluating burn pattern. Please hold steady...";
+        recommendation.textContent = "Neural network is evaluating skin/burn pattern. Please hold steady...";
 
         try {
             // Freeze current frame onto canvas
@@ -184,18 +193,22 @@ document.addEventListener('DOMContentLoaded', () => {
             captureBtn.classList.add('btn-retake');
 
             const imgData = ctx.getImageData(0, 0, w, h);
-            const tensor = tf.browser.fromPixels(imgData)
-                .resizeBilinear([224, 224])
-                .toFloat()
-                .div(tf.scalar(255.0))
-                .expandDims();
+            // Model includes Rescaling(1/127.5, -1.0), so pass raw [0, 255] float32 pixels
+            const tensor = tf.tidy(() =>
+                tf.browser.fromPixels(imgData)
+                    .resizeBilinear([224, 224])
+                    .toFloat()
+                    .expandDims()
+            );
 
-            const prediction = await model.predict(tensor).data();
+            const predictionTensor = model.predict(tensor);
+            const prediction = await predictionTensor.data();
             tensor.dispose();
+            predictionTensor.dispose();
 
-            const severityMap = ["1st Degree", "2nd Degree", "3rd Degree"];
+            const severityMap = ["1st Degree", "2nd Degree", "3rd Degree", "Non-Burn"];
             const maxIdx = prediction.indexOf(Math.max(...prediction));
-            const severity = severityMap[maxIdx];
+            const severity = severityMap[maxIdx] || "Non-Burn";
             const confidence = (prediction[maxIdx] * 100).toFixed(1);
 
             // Update UI with results
@@ -211,10 +224,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 severityBadge.style.background = '#fef3c7';
                 severityBadge.style.color = '#92400e';
                 recommendation.textContent = "Second-degree burn detected. Blistering present. Keep clean, do not pop blisters, and consult a doctor.";
-            } else {
+            } else if (severity === "3rd Degree") {
                 severityBadge.style.background = '#fee2e2';
                 severityBadge.style.color = '#991b1b';
                 recommendation.textContent = "WARNING: Third-degree burn detected! Requires IMMEDIATE emergency medical attention.";
+            } else {
+                severityBadge.style.background = '#e0f2fe';
+                severityBadge.style.color = '#075985';
+                recommendation.textContent = "No burn injury detected. If redness, pain, or irritation persists, clean the area gently or consult a healthcare professional.";
             }
 
             // Send report to ESP32 -> triggers OLED & LoRa TX!

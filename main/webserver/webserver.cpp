@@ -66,11 +66,11 @@ static esp_err_t tf_min_js_handler(httpd_req_t *req) {
     return httpd_resp_send(req, (const char *)tf_min_js_gz_start, tf_min_js_gz_end - tf_min_js_gz_start);
 }
 
-// Handler for "/model.json" (Served Gzipped: 5.2 KB instead of 123 KB)
+// Handler for "/model.json" (Served Gzipped)
 static esp_err_t model_json_handler(httpd_req_t *req) {
     ESP_LOGI(TAG, "HTTP: Serving /model.json (Gzip compressed)");
     httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
-    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=604800, immutable");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, (const char *)model_json_gz_start, model_json_gz_end - model_json_gz_start);
 }
@@ -93,7 +93,7 @@ static esp_err_t shard_file_handler(httpd_req_t *req) {
 
     ESP_LOGI(TAG, "HTTP: Streaming shard %s (%ld bytes)", filepath, fsize);
 
-    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=604800, immutable");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     httpd_resp_set_type(req, "application/octet-stream");
 
     const size_t chunk_size = 8192;
